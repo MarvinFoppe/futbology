@@ -1191,24 +1191,27 @@ function getTrophyGroup(comp) {
         reader.readAsText(file, 'UTF-8');
     }
 
-    // === INIT: TRY FETCH, FALLBACK TO EMBEDDED DATA ===
+    // === INIT: TRY FETCH (GitHub Pages), FALLBACK TO EMBEDDED DATA (lokal) ===
     async function init() {
-        let csvText = null;
+        let csvText = EMBEDDED_CSV; // Default: eingebettete Daten
         try {
-            const resp = await fetch('spiele.csv');
-            if (resp.ok) csvText = await resp.text();
-        } catch(e) { /* fetch not available (file:// protocol) */ }
-
-        // Use fetched CSV or fall back to embedded data
-        if (!csvText || csvText.trim().length < 20) {
-            csvText = EMBEDDED_CSV;
-        }
+            if (window.location.protocol.startsWith('http')) {
+                const resp = await fetch('spiele.csv');
+                if (resp.ok) {
+                    const fetched = await resp.text();
+                    // Only use if it looks like valid CSV (has semicolons and date pattern)
+                    if (fetched.includes(';') && /\d{8};/.test(fetched)) {
+                        csvText = fetched;
+                    }
+                }
+            }
+        } catch(e) { /* fetch failed, use embedded data */ }
 
         try {
             loadFromCSVText(csvText);
         } catch(err) {
             document.getElementById('loadingScreen').innerHTML =
-                '<div class="error-msg">⚠️ Fehler: ' + err.message + '</div>';
+                '<div class="error-msg" style="color:#e30613;text-align:center;padding:40px;">Fehler: ' + err.message + '</div>';
         }
     }
     init();
