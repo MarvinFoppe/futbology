@@ -496,26 +496,50 @@ function getTrophyGroup(comp) {
 }
 
 
-    // === CSV PARSER ===
+    // === CSV PARSER (handles both formats) ===
     function parseCSV(text) {
         // Remove BOM, normalize line endings, trim
         const clean = text.replace(/^\uFEFF/, '').replace(/\r\n/g, '\n').replace(/\r/g, '\n').trim();
-        const lines = clean.split('\n');
-        const headers = lines[0].split(';').map(h => h.trim().toLowerCase());
-        return lines.slice(1).filter(l => l.trim()).map(line => {
-            const vals = line.split(';');
-            const obj = {};
-            headers.forEach((h, i) => obj[h] = (vals[i] || '').trim());
-            // Map lowercase keys to expected camelCase
-            return {
-                date: obj['date'] || '',
-                homeTeam: obj['hometeam'] || '',
-                awayTeam: obj['awayteam'] || '',
-                score: obj['score'] || '',
-                stadium: obj['stadium'] || '',
-                competition: obj['competition'] || ''
-            };
-        });
+        const lines = clean.split('\n').filter(l => l.trim());
+        if (!lines.length) return [];
+
+        // Detect format: semicolon CSV (with header) vs Futbology export (colon-separated, no header)
+        const firstLine = lines[0];
+        const isSemicolonCSV = firstLine.includes(';') && firstLine.toLowerCase().includes('date');
+
+        if (isSemicolonCSV) {
+            // Format: date;homeTeam;awayTeam;score;stadium;competition
+            const headers = firstLine.split(';').map(h => h.trim().toLowerCase());
+            return lines.slice(1).filter(l => l.trim()).map(line => {
+                const vals = line.split(';');
+                const obj = {};
+                headers.forEach((h, i) => obj[h] = (vals[i] || '').trim());
+                return {
+                    date: obj['date'] || '',
+                    homeTeam: obj['hometeam'] || '',
+                    awayTeam: obj['awayteam'] || '',
+                    score: obj['score'] || '',
+                    stadium: obj['stadium'] || '',
+                    competition: obj['competition'] || ''
+                };
+            });
+        } else {
+            // Futbology export format: date:stadium:home:away:hGoals:aGoals::competition
+            return lines.map(line => {
+                const compParts = line.split('::');
+                const competition = compParts.length > 1 ? compParts[1].trim() : '';
+                const fields = compParts[0].split(':');
+                if (fields.length < 6) return null;
+                return {
+                    date: fields[0].trim(),
+                    stadium: fields[1].trim(),
+                    homeTeam: fields[2].trim(),
+                    awayTeam: fields[3].trim(),
+                    score: fields[4].trim() + ':' + fields[5].trim(),
+                    competition: competition
+                };
+            }).filter(m => m && m.date);
+        }
     }
 
     // === HELPER FUNCTIONS ===
@@ -1199,8 +1223,8 @@ function getTrophyGroup(comp) {
                 const resp = await fetch('spiele.csv');
                 if (resp.ok) {
                     const fetched = await resp.text();
-                    // Only use if it looks like valid CSV (has semicolons and date pattern)
-                    if (fetched.includes(';') && /\d{8};/.test(fetched)) {
+                    // Use if it contains date patterns (works for both ; and : formats)
+                    if (/\d{8}[;:]/.test(fetched)) {
                         csvText = fetched;
                     }
                 }
